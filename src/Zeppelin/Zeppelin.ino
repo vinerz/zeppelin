@@ -7,6 +7,8 @@
 #define PROP_BR 1
 #define PROP_DO 2
 
+#define VIB_MOT 3 // PORT
+
 // Animation constants
 #define ANIM_ENABLED 0
 #define ANIM_OBJECTIVE 1
@@ -16,6 +18,11 @@
 #define ANIM_DURATION 5
 
 #define DEBUG_ANIM 0
+
+#define DESIRED_ALTITUDE 100
+
+#define MINIMUM_SPEED 40
+#define MAXIMUM_SPEED 255
 
 long latestBrainTick = -1;
 byte brainTickTime = 50;
@@ -28,13 +35,15 @@ void setup() {
   
   Serial.print("Initializing sensors... ");
   
-  /*
-  prepareSensor(SENS_L);
-  prepareSensor(SENS_R);
-  prepareSensor(SENS_F);
-  prepareSensor(SENS_D);*/
+  setupSensors();
+  
+  pinMode(VIB_MOT, OUTPUT);
   
   setupPropellers();
+
+  vibrate(250);
+  delay(50);
+  vibrate(100);
   
   Serial.println("DONE");
   //delay(500000);
@@ -50,12 +59,21 @@ void loop() {
   }
 
   if( ((millis() - latestBrainTick) > brainTickTime) || latestBrainTick == -1 ) {
-    /*extractAverage(SENS_F);
-    extractAverage(SENS_L);
-    extractAverage(SENS_R);
-    extractAverage(SENS_D);*/
-    
-    
+    updateSensors();
+
+    /* altitude logic */
+    byte upPropellerSpeed = MINIMUM_SPEED; // by default, the propeller is 'off'
+    byte currentAltitude = getSensorDistance(SENS_D); // then we collect the current balloon altitude
+    byte distance = (DESIRED_ALTITUDE - currentAltitude); // get the distance (in cm) from the desired position
+
+    /* the balloon is lower than desired, need to pull it up */
+    if(distance > 0) {
+      byte speedVariation = MAXIMUM_SPEED - MINIMUM_SPEED;
+      float speedIncreaseByCM = (float) speedVariation / (float) DESIRED_ALTITUDE;
+      upPropellerSpeed = MINIMUM_SPEED + (speedIncreaseByCM * distance);
+    }
+
+    startPropellerAnimation(PROP_DO, upPropellerSpeed, 100);
     
     /*
     reportSensor(SENS_F);
@@ -70,6 +88,17 @@ void loop() {
   }
   
   delay(1);
+}
+
+/*
+ * -=============================-
+ *  VIBRATION ENGINEERING STUFF 
+ * -=============================-
+ */
+void vibrate(int duration) {
+  digitalWrite(VIB_MOT, HIGH);
+  delay(duration);
+  digitalWrite(VIB_MOT, LOW);
 }
 
 /*
@@ -204,9 +233,27 @@ int currentAverages[4] = { -1, -1, -1, -1 }; // valid averages for zeppelin usag
 int latestAverages[4] = { -1, -1, -1, -1 }; // current unofficial averages that will be put on valid averages after x rounds
 int latestDistances[4] = { -1, -1, -1, -1 }; // latest distance gotten from sensors
 
+void setupSensors() {
+  prepareSensor(SENS_L);
+  prepareSensor(SENS_R);
+  prepareSensor(SENS_F);
+  prepareSensor(SENS_D);
+}
+
 void prepareSensor(int sensor) {
   pinMode(SENS[sensor][0], OUTPUT);
   pinMode(SENS[sensor][1], INPUT);
+}
+
+byte getSensorDistance(int sensor) {
+  return (byte) currentAverages[sensor];
+}
+
+void updateSensors() {
+  extractAverage(SENS_F);
+  extractAverage(SENS_L);
+  extractAverage(SENS_R);
+  extractAverage(SENS_D);
 }
 
 long extractAverage(int sensor) {
