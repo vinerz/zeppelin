@@ -20,6 +20,7 @@
 #define DEBUG_ANIM 0
 
 #define DESIRED_ALTITUDE 100
+#define DESIRED_SIDES_DISTANCE 60
 
 #define MINIMUM_SPEED 40
 #define MAXIMUM_SPEED 255
@@ -50,6 +51,8 @@ void setup() {
 }
 
 void loop() {
+  /* the animation tick */
+  /* the animation needs to be run more often. so the tick time is every 10ms (default) */
   if( ((millis() - latestAnimTick) > animTickTime) || latestAnimTick == -1 ) {
     _propellerAnimationFrame(PROP_BL);
     _propellerAnimationFrame(PROP_BR);
@@ -58,6 +61,8 @@ void loop() {
     latestAnimTick = millis();
   }
 
+  /* the brain tick */
+  /* we do not need to run the Zeppelin's logic loop every single clock, so we make a tick time of 50ms (default) */
   if( ((millis() - latestBrainTick) > brainTickTime) || latestBrainTick == -1 ) {
     updateSensors();
 
@@ -71,8 +76,29 @@ void loop() {
       byte speedVariation = MAXIMUM_SPEED - MINIMUM_SPEED;
       float speedIncreaseByCM = (float) speedVariation / (float) DESIRED_ALTITUDE;
       upPropellerSpeed = MINIMUM_SPEED + (speedIncreaseByCM * distance);
+    } else {
+      /* the balloon tends to fall, so no need to reverse this propeller */
     }
 
+    /* left/right logic */
+    byte leftPropellerSpeed = MINIMUM_SPEED;
+    byte rightPropellerSpeed = MINIMUM_SPEED;
+    byte currentLeftDistance = getSensorDistance(SENS_L);
+    byte currentRightDistance = getSensorDistance(SENS_R);
+
+    byte currentLeftSpeed = getPropellerSpeed(PROP_BL);
+    byte currentRightSpeed = getPropellerSpeed(PROP_BR);
+
+    if( currentLeftDistance < DESIRED_SIDES_DISTANCE ) {
+      byte leftVariation = DESIRED_SIDES_DISTANCE - currentLeftDistance;
+
+      
+    }
+
+
+    /* fire animations */
+    startPropellerAnimation(PROP_BL, leftPropellerSpeed, 100);
+    startPropellerAnimation(PROP_BR, rightPropellerSpeed, 100);
     startPropellerAnimation(PROP_DO, upPropellerSpeed, 100);
     
     /*
@@ -140,6 +166,10 @@ void setupPropellers() {
 void setPropellerSpeed(int propeller, int speed) {
   PROPL_ANIMATIONS[propeller][ANIM_CURRENTVAL] = speed;
   analogWrite(PROP[propeller], speed);
+}
+
+byte getPropellerSpeed(int propeller) {
+  return (byte) PROPL_ANIMATIONS[propeller][ANIM_CURRENTVAL];
 }
 
 void stopPropeller(int propeller, int duration) {
@@ -272,12 +302,9 @@ long extractAverage(int sensor) {
   }
 }
 
-long readSensorDistance(int sensor) {
-  long duration, distance;
-  int sens_trigger, sens_echo;
-  
-  sens_trigger = SENS[sensor][0];
-  sens_echo = SENS[sensor][1];
+long readSensorDistance(int sensor) { 
+  int sens_trigger = SENS[sensor][0];
+  int sens_echo = SENS[sensor][1];
   
   digitalWrite(sens_trigger, LOW);
   delayMicroseconds(2);
@@ -285,8 +312,8 @@ long readSensorDistance(int sensor) {
   delayMicroseconds(10);
   digitalWrite(sens_trigger, LOW);
   
-  duration = pulseIn(sens_echo, HIGH);
-  distance = (duration / 2) / 29.1;
+  long duration = pulseIn(sens_echo, HIGH);
+  long distance = (duration / 2) / 29.1;
   
   latestDistances[sensor] = distance;
   
