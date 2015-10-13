@@ -15,39 +15,59 @@
 #define ANIM_TIMEINIT 4
 #define ANIM_DURATION 5
 
+#define DEBUG_ANIM 0
+
+long latestBrainTick = -1;
+byte brainTickTime = 50;
+
+long latestAnimTick = -1;
+byte animTickTime = 10;
+
 void setup() {
   Serial.begin(9600);
   
   Serial.print("Initializing sensors... ");
   
+  /*
   prepareSensor(SENS_L);
   prepareSensor(SENS_R);
   prepareSensor(SENS_F);
-  prepareSensor(SENS_D);
-
-  preparePropeller(PROP_BL);
-  preparePropeller(PROP_BR);
-  preparePropeller(PROP_DO);
+  prepareSensor(SENS_D);*/
+  
+  setupPropellers();
   
   Serial.println("DONE");
+  //delay(500000);
 }
 
 void loop() {
-  _propellerAnimationFrame(PROP_BL);
-  _propellerAnimationFrame(PROP_BR);
-  _propellerAnimationFrame(PROP_DO);
+  if( ((millis() - latestAnimTick) > animTickTime) || latestAnimTick == -1 ) {
+    _propellerAnimationFrame(PROP_BL);
+    _propellerAnimationFrame(PROP_BR);
+    _propellerAnimationFrame(PROP_DO);
+    
+    latestAnimTick = millis();
+  }
 
-  /*extractAverage(SENS_F);
-  extractAverage(SENS_L);
-  extractAverage(SENS_R);
-  extractAverage(SENS_D); 
-  
-  reportSensor(SENS_F);  
-  reportSensor(SENS_L);  
-  reportSensor(SENS_R);  
-  reportSensor(SENS_D);
-  
-  Serial.println("-== END OF REPORT ==-");*/
+  if( ((millis() - latestBrainTick) > brainTickTime) || latestBrainTick == -1 ) {
+    /*extractAverage(SENS_F);
+    extractAverage(SENS_L);
+    extractAverage(SENS_R);
+    extractAverage(SENS_D);*/
+    
+    
+    
+    /*
+    reportSensor(SENS_F);
+    reportSensor(SENS_L);
+    reportSensor(SENS_R);
+    reportSensor(SENS_D);
+    
+    Serial.println("-== END OF REPORT ==-");
+    */
+    
+    latestBrainTick = millis();
+  }
   
   delay(1);
 }
@@ -59,14 +79,37 @@ void loop() {
  */
 
 String prop_labels[3] = { "Back_Left", "Back_Right", "Down" };
-int PROP[3] = { A0, A1, A2 };
+int PROP[3] = { 9, 10, 11 };
+
+long PROPL_ANIMATIONS[3][6] = {
+  { 0, 0, 0, 0, 0, 0 },
+  { 0, 0, 0, 0, 0, 0 },
+  { 0, 0, 0, 0, 0, 0 }
+};
 
 void preparePropeller(int propeller) {
   pinMode(PROP[propeller], OUTPUT);
   digitalWrite(PROP[propeller], LOW);
 }
 
+void setupPropellers() {
+  preparePropeller(PROP_BL);
+  preparePropeller(PROP_BR);
+  preparePropeller(PROP_DO);
+  
+  setPropellerSpeed(PROP_BL, 65);
+  setPropellerSpeed(PROP_BR, 65);
+  setPropellerSpeed(PROP_DO, 65);
+  
+  delay(300);
+  
+  startPropellerAnimation(PROP_BL, 255, 18000);
+  startPropellerAnimation(PROP_BR, 255, 8000);
+  startPropellerAnimation(PROP_DO, 255, 3000);
+}
+
 void setPropellerSpeed(int propeller, int speed) {
+  PROPL_ANIMATIONS[propeller][ANIM_CURRENTVAL] = speed;
   analogWrite(PROP[propeller], speed);
 }
 
@@ -81,23 +124,18 @@ void stopPropeller(int propeller, int duration) {
 }
 
 void fullSpeedPropeller(int propeller, int duration) {
+  PROPL_ANIMATIONS[propeller][ANIM_CURRENTVAL] = 255;
   setPropellerSpeed(propeller, 255);
 }
 
 /* PROPELLER ANIMATIONS */
 /* This methods were created for smooth acceleration and breaking of the propellers, due to the Zeppeling long momentum. */
 
-long PROPL_ANIMATIONS[3][6] = {
-  { 0, 0, 0, 0, 0, 0 },
-  { 0, 0, 0, 0, 0, 0 },
-  { 0, 0, 0, 0, 0, 0 }
-};
-
 void resetPropellerAnimation(int propeller) {
   PROPL_ANIMATIONS[propeller][0] = 0;
   PROPL_ANIMATIONS[propeller][1] = 0;
   PROPL_ANIMATIONS[propeller][2] = 0;
-  PROPL_ANIMATIONS[propeller][3] = 0;
+  //PROPL_ANIMATIONS[propeller][3] = 0;
   PROPL_ANIMATIONS[propeller][4] = 0;
   PROPL_ANIMATIONS[propeller][5] = 0;
 }
@@ -107,6 +145,8 @@ void startPropellerAnimation(int propeller, int objective, int duration) {
   
   PROPL_ANIMATIONS[propeller][ANIM_OBJECTIVE] = objective;
   PROPL_ANIMATIONS[propeller][ANIM_DURATION] = duration;
+  PROPL_ANIMATIONS[propeller][ANIM_TIMEINIT] = millis();
+  PROPL_ANIMATIONS[propeller][ANIM_INITVAL] = PROPL_ANIMATIONS[propeller][ANIM_CURRENTVAL];
   PROPL_ANIMATIONS[propeller][ANIM_ENABLED] = 1;
 }
 
@@ -139,11 +179,13 @@ void _propellerAnimationFrame(int propeller) {
       PROPL_ANIMATIONS[propeller][ANIM_CURRENTVAL] = objective;
       PROPL_ANIMATIONS[propeller][ANIM_ENABLED] = 0;
     }
+    
+    analogWrite(PROP[propeller], PROPL_ANIMATIONS[propeller][ANIM_CURRENTVAL]);
 
-    Serial.print("Current Speed for Propeller: "); Serial.println(currentStage);
-    Serial.println(PROPL_ANIMATIONS[propeller][ANIM_CURRENTVAL]);
+    if ( DEBUG_ANIM ) Serial.print("Current Speed Animation Stage for Propeller: "); if ( DEBUG_ANIM ) Serial.println(currentStage);
+    if ( DEBUG_ANIM ) Serial.print("Current Speed for Propeller: "); if ( DEBUG_ANIM ) Serial.println(PROPL_ANIMATIONS[propeller][ANIM_CURRENTVAL]);
   } else {
-    Serial.println("No animation enabled for Propeller " + prop_labels[propeller]);
+    if ( DEBUG_ANIM ) Serial.println("No animation enabled for Propeller " + prop_labels[propeller]);
   }
 }
 
@@ -153,7 +195,7 @@ void _propellerAnimationFrame(int propeller) {
  * -=========================-
  */
 
-int SENS[4][2] = { {2,3}, {4,5}, {6,7}, {8,9} }; // Sensors Ports
+int SENS[4][2] = { {A0, A1}, {4,5}, {6,7}, {8,9} }; // Sensors Ports
 const int sens_rounds = 3; // rounds to consider a valid distance from sensors
 
 String sens_labels[4] = { "Left", "Right", "Front", "Down" }; // human readable labels for sensors
