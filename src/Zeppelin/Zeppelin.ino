@@ -66,8 +66,13 @@ void loop() {
   if( ((millis() - latestBrainTick) > brainTickTime) || latestBrainTick == -1 ) {
     updateSensors();
 
+    /* by default, the propellers are on the minimum rotation speed */
+    // TODO: change these vars with a new prefix
+    byte leftPropellerSpeed = MINIMUM_SPEED;
+    byte rightPropellerSpeed = MINIMUM_SPEED;
+    byte upPropellerSpeed = MINIMUM_SPEED;
+
     /* altitude logic */
-    byte upPropellerSpeed = MINIMUM_SPEED; // by default, the propeller is 'off'
     byte currentAltitude = getSensorDistance(SENS_D); // then we collect the current balloon altitude
     byte distance = (DESIRED_ALTITUDE - currentAltitude); // get the distance (in cm) from the desired position
 
@@ -80,21 +85,38 @@ void loop() {
       /* the balloon tends to fall, so no need to reverse this propeller */
     }
 
+    /* forward logic */
+    // always full throttle
+    // check for blocking paths to steering
+    // the end
+
     /* left/right logic */
-    byte leftPropellerSpeed = MINIMUM_SPEED;
-    byte rightPropellerSpeed = MINIMUM_SPEED;
+    /* we get the distance between the two walls */
     byte currentLeftDistance = getSensorDistance(SENS_L);
     byte currentRightDistance = getSensorDistance(SENS_R);
 
+    /* the corridorSize is the full available size on the sides of the wall */
+    byte corridorSize = currentLeftDistance + currentRightDistance;
+
+    /* we get the current speed for both propellers */
     byte currentLeftSpeed = getPropellerSpeed(PROP_BL);
     byte currentRightSpeed = getPropellerSpeed(PROP_BR);
 
-    if( currentLeftDistance < DESIRED_SIDES_DISTANCE ) {
-      byte leftVariation = DESIRED_SIDES_DISTANCE - currentLeftDistance;
+    /* we aim to both sides have this desired length */
+    byte halfCorridor = corridorSize / 2;
 
-      
+    /* the balloon is more to the left */
+    if( currentLeftDistance < halfCorridor ) {
+      byte leftVariation = halfCorridor - currentLeftDistance;
+      // the bigger the variation, the more we need to decrease the speed of the right propeller
+      // when the left side is wide open, the Zeppelin will put this propeller on the minimum state automatically
     }
-
+    /* the balloon is more to the right */
+    else if( currentRightDistance < halfCorridor ) {
+      byte rightVariation = halfCorridor - currentRightDistance;
+      // the bigger the variation, the more we need to decrease the speed of the left propeller
+      // when the right side is wide open, the Zeppelin will put this propeller on the minimum state automatically
+    }
 
     /* fire animations */
     startPropellerAnimation(PROP_BL, leftPropellerSpeed, 100);
