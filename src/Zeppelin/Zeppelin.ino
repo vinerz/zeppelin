@@ -19,14 +19,17 @@
 
 #define DEBUG_ANIM 0
 
-#define DESIRED_ALTITUDE 100
-#define DESIRED_SIDES_DISTANCE 60
+#define DESIRED_ALTITUDE 30
+#define DESIRED_FRONT_DISTANCE 50
+
+#define MINIMUM_TOLERABLE_SIDES_DISTANCE 40
+#define MAXIMUM_TOLERABLE_SIDES_DISTANCE 150
 
 #define MINIMUM_SPEED 40
 #define MAXIMUM_SPEED 255
 
 long latestBrainTick = -1;
-byte brainTickTime = 50;
+byte brainTickTime = 200;
 
 long latestAnimTick = -1;
 byte animTickTime = 10;
@@ -38,10 +41,9 @@ void setup() {
   
   setupSensors();
   
-  pinMode(VIB_MOT, OUTPUT);
-  
   setupPropellers();
 
+  pinMode(VIB_MOT, OUTPUT);
   vibrate(250);
   delay(50);
   vibrate(100);
@@ -74,21 +76,33 @@ void loop() {
 
     /* altitude logic */
     byte currentAltitude = getSensorDistance(SENS_D); // then we collect the current balloon altitude
-    byte distance = (DESIRED_ALTITUDE - currentAltitude); // get the distance (in cm) from the desired position
+    int distance = (DESIRED_ALTITUDE - currentAltitude); // get the distance (in cm) from the desired position
 
     /* the balloon is lower than desired, need to pull it up */
     if(distance > 0) {
       byte speedVariation = MAXIMUM_SPEED - MINIMUM_SPEED;
       float speedIncreaseByCM = (float) speedVariation / (float) DESIRED_ALTITUDE;
+      //Serial.println(speedIncreaseByCM);
       upPropellerSpeed = MINIMUM_SPEED + (speedIncreaseByCM * distance);
     } else {
       /* the balloon tends to fall, so no need to reverse this propeller */
+      upPropellerSpeed = MINIMUM_SPEED;
     }
 
     /* forward logic */
-    // always full throttle
-    // check for blocking paths to steering
-    // the end
+    byte currentFrontDistance = getSensorDistance(SENS_F);
+
+    if( currentFrontDistance < DESIRED_FRONT_DISTANCE ) {
+      byte frontDistanceVariation = DESIRED_FRONT_DISTANCE - currentFrontDistance;
+      byte speedVariation = MAXIMUM_SPEED - MINIMUM_SPEED;
+      float speedDecreaseByCM = (float) speedVariation / (float) DESIRED_FRONT_DISTANCE;
+
+      leftPropellerSpeed = MAXIMUM_SPEED - (speedDecreaseByCM * frontDistanceVariation * 1.1);
+      rightPropellerSpeed = MAXIMUM_SPEED - (speedDecreaseByCM * frontDistanceVariation * 1.1);
+    } else {
+      leftPropellerSpeed = MAXIMUM_SPEED;
+      rightPropellerSpeed = MAXIMUM_SPEED;
+    }
 
     /* left/right logic */
     /* we get the distance between the two walls */
@@ -96,7 +110,7 @@ void loop() {
     byte currentRightDistance = getSensorDistance(SENS_R);
 
     /* the corridorSize is the full available size on the sides of the wall */
-    byte corridorSize = currentLeftDistance + currentRightDistance;
+    long corridorSize = currentLeftDistance + currentRightDistance;
 
     /* we get the current speed for both propellers */
     byte currentLeftSpeed = getPropellerSpeed(PROP_BL);
@@ -105,15 +119,43 @@ void loop() {
     /* we aim to both sides have this desired length */
     byte halfCorridor = corridorSize / 2;
 
+    byte leftVariation = halfCorridor - currentLeftDistance;
+    byte rightVariation = halfCorridor - currentRightDistance;
+
+    byte sidesVariation = MAXIMUM_TOLERABLE_SIDES_DISTANCE - MINIMUM_TOLERABLE_SIDES_DISTANCE;
+
+    Serial.print("corridorSize: "); Serial.println(corridorSize);
+    Serial.print("leftVariation: "); Serial.println(leftVariation);
+
     /* the balloon is more to the left */
     if( currentLeftDistance < halfCorridor ) {
-      byte leftVariation = halfCorridor - currentLeftDistance;
       // the bigger the variation, the more we need to decrease the speed of the right propeller
       // when the left side is wide open, the Zeppelin will put this propeller on the minimum state automatically
+      // My master reference is the current propeller speed.
+      // Should be a limit? I don`t have a reference of the initial and maximum. Maybe
+      // If I put a limit of 150cm to turn off the propeller completely
+      // And a tolerance of 40cm to keep the full throttle
+      // Yep, it works.
+      // but think about hte situation that the zeppelin is about to crash in front but the sides distance is also too close.
+      // I can't steer any of them and it will crash on the sides!
+      // future todo ^
+      if( rightVariation > MAXIMUM_TOLERABLE_SIDES_DISTANCE ) {
+        rightPropellerSpeed = MINIMUM_SPEED;
+      } else {
+        byte speedVariation = currentLeftSpeed - MINIMUM_SPEED;
+        float speedDecreaseByCM = (float) speedVariation / (float) sidesVariation;
+        rightPropellerSpeed = currentRightSpeed - (speedDecreaseByCM * rightVariation * 1.1);
+
+        Serial.println("Start report");
+        Serial.print("speedVariation: "); Serial.println(speedVariation);
+        Serial.print("sidesVariation: "); Serial.println(sidesVariation);
+        Serial.print("speedDecreaseByCM: "); Serial.println(speedDecreaseByCM);
+        Serial.print("rightPropellerSpeed: "); Serial.println(rightPropellerSpeed);
+        
+      }
     }
     /* the balloon is more to the right */
     else if( currentRightDistance < halfCorridor ) {
-      byte rightVariation = halfCorridor - currentRightDistance;
       // the bigger the variation, the more we need to decrease the speed of the left propeller
       // when the right side is wide open, the Zeppelin will put this propeller on the minimum state automatically
     }
@@ -123,14 +165,14 @@ void loop() {
     startPropellerAnimation(PROP_BR, rightPropellerSpeed, 100);
     startPropellerAnimation(PROP_DO, upPropellerSpeed, 100);
     
-    /*
-    reportSensor(SENS_F);
+    
+    //reportSensor(SENS_F);
     reportSensor(SENS_L);
     reportSensor(SENS_R);
-    reportSensor(SENS_D);
+    //reportSensor(SENS_D);
     
-    Serial.println("-== END OF REPORT ==-");
-    */
+    //Serial.println("-== END OF REPORT ==-");
+    
     
     latestBrainTick = millis();
   }
@@ -276,7 +318,7 @@ void _propellerAnimationFrame(int propeller) {
  * -=========================-
  */
 
-int SENS[4][2] = { {A0, A1}, {4,5}, {6,7}, {8,9} }; // Sensors Ports
+int SENS[4][2] = { {A0, A1}, {2,3}, {4,5}, {6,7} }; // Sensors Ports
 const int sens_rounds = 3; // rounds to consider a valid distance from sensors
 
 String sens_labels[4] = { "Left", "Right", "Front", "Down" }; // human readable labels for sensors
@@ -293,8 +335,8 @@ void setupSensors() {
 }
 
 void prepareSensor(int sensor) {
-  pinMode(SENS[sensor][0], OUTPUT);
-  pinMode(SENS[sensor][1], INPUT);
+  pinMode(SENS[sensor][1], OUTPUT);
+  pinMode(SENS[sensor][0], INPUT);
 }
 
 byte getSensorDistance(int sensor) {
@@ -325,8 +367,8 @@ long extractAverage(int sensor) {
 }
 
 long readSensorDistance(int sensor) { 
-  int sens_trigger = SENS[sensor][0];
-  int sens_echo = SENS[sensor][1];
+  int sens_trigger = SENS[sensor][1];
+  int sens_echo = SENS[sensor][0];
   
   digitalWrite(sens_trigger, LOW);
   delayMicroseconds(2);
